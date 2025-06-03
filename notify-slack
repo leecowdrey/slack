@@ -1,0 +1,177 @@
+#!/bin/bash
+RETVAL=0
+
+# functions
+usage ()
+{
+	echo "Usage: ${0} \ "
+	echo "  --title|-t <text>           Required field title. The title cannot contain markup and will be escaped for you"
+	echo "  --value|-v <text>           Text value of the field. Can contain standard message markup and must be escaped "
+	echo "                              as normal. Can be multi-line."
+	echo "  --fallback|-f <text>        Required text summary of the attachment that is shown by clients that understand "
+	echo "                              attachments but choose not to show them."
+	echo " "
+	echo " [--url|-u <url>]             Webhook channel URL"
+	echo " [--colour|color|-c <value>]  either good|warning|danger or hex code #36a64f"
+	echo " [--banner|-b <text>]         Optional text that should appear within the attachment"
+	echo " [--pretext|-p <text>]        Optional text that should appear above the formatted data only if banner include"
+	echo " [--short|-s]                 Optional flag indicating whether the value is short enough to be displayed side by"
+	echo "                              side with other values"
+	echo " [--timeout|-o <seconds>]     connection timeout in seconds"
+	echo " [--dummy|-d]                 Do not send to Slack, display locally"
+	echo " [--help|-?]                  this text"
+}
+
+# check if helper tools available
+# is curl installed and where?
+	command -v curl &>/dev/null
+	if [ $? -eq 0 ] ; then
+		CURL=$(which curl)
+		RETVAL=$?
+		if [ ${RETVAL} -eq 0 ] ; then
+		 RETVAL=0
+		 #${CURL} -V
+		elif [ ${RETVAL} -eq 1 ] ; then
+		 echo "FAIL: curl is nonexistent or not executable"
+		 RETVAL=1
+		 exit ${RETVAL}
+		elif [ ${RETVAL} -eq 2 ] ; then
+		 echo "FAIL: curl invalid option specified"
+		 RETVAL=1
+		 exit ${RETVAL}
+		fi
+	else
+		echo "FAIL: curl must be installed, please install curl and try again"
+		RETVAL=1
+		exit ${RETVAL}
+	fi
+
+# Defaults
+NAME=$(basename $0)
+NODE=$(hostname)
+WHEN=$(date)
+SLACK_DUMMY=0
+SLACK_TIMEOUT=5
+SLACK_CHANNEL_URL="https://hooks.slack.com/services/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"
+SLACK_COLOUR="warning"
+SLACK_FALLBACK="${NODE}:${NAME}"
+SLACK_BANNER_TEXT=""
+SLACK_BANNER_PRETEXT=""
+SLACK_TITLE="${NODE}:${NAME}"
+SLACK_VALUE="${WHEN}"
+SLACK_SHORT=0
+
+# check for mandatory command line arguments
+if [ $# -eq 0 ] ; then
+ usage
+ exit 0
+fi
+
+# Parse command line arguments
+OPTION="${1}"
+while [ $# -gt 0 ] ; do
+	case "${OPTION}" in
+		--url|-u)
+			shift
+			SLACK_CHANNEL_URL="${1,,}"
+			;;
+		--colour|color|-c)
+			shift
+			SLACK_COLOUR="${1,,}"
+			;;
+		--fallback|-f)
+			shift
+			SLACK_FALLBACK="${1,,}"
+			;;
+		--banner|-b)
+			shift
+			SLACK_BANNER_TEXT="${1,,}"
+			;;
+		--pretext|-p)
+			shift
+			SLACK_BANNER_PRETEXT="${1,,}"
+			;;
+		--title|-t)
+			shift
+			SLACK_TITLE="${1,,}"
+			;;
+		--value|-v)
+			shift
+			SLACK_VALUE="${1,,}"
+			;;
+		--timeout|-o)
+			shift
+			if [ ! -z "${1##*[!0-9]*}" ] ; then
+  			SLACK_TIMEOUT=${1,,}
+			else
+			  echo "FAIL: --timeout|-o is not numeric, using default ${SLACK_TIMEOUT}"
+  		fi
+			;;
+		--short|-s)
+			SLACK_SHORT=1
+			;;
+		--dummy|-d)
+			SLACK_DUMMY=1
+			;;
+		--help|-?)
+			usage
+			exit 0
+			;;
+		*)
+			usage
+			echo "Invalid argument '${OPTION}'"
+			exit 0
+			;;
+	esac
+	shift
+	OPTION=$1
+done
+
+# build up JSON payload for notification
+SLACK_NOTIFICATION="{\"fallback\":\"${SLACK_FALLBACK}\""
+
+if [ -n "${SLACK_BANNER_TEXT}" ] ; then
+  if [ -n "${SLACK_BANNER_PRETEXT}" ] ; then
+    SLACK_NOTIFICATION+=",\"pretext\":\"${SLACK_BANNER_PRETEXT}\""
+  fi
+  SLACK_NOTIFICATION+=",\"text\":\"${SLACK_BANNER_TEXT}\""
+fi
+
+SLACK_NOTIFICATION+=",\"color\":\"${SLACK_COLOUR}\""
+SLACK_NOTIFICATION+=",\"fields\":[{\"title\":\"${SLACK_TITLE}\",\"value\":\"${SLACK_VALUE}\""
+
+if [ ${SLACK_SHORT} -eq 1 ] ; then
+  SLACK_NOTIFICATION+=",\"short\":true}"
+else
+  SLACK_NOTIFICATION+=",\"short\":false}"
+fi
+
+SLACK_NOTIFICATION+="]}"
+
+
+# post JSON notification to Slack
+if [ ${SLACK_DUMMY} -eq 1 ] ; then
+  echo "DEBUG: title       ${SLACK_TITLE}"
+  echo "DEBUG: value       ${SLACK_VALUE}"
+  echo "DEBUG: fallback    ${SLACK_FALLBACK}"
+  echo "DEBUG: colour      ${SLACK_COLOUR}"
+  echo "DEBUG: banner      ${SLACK_BANNER_TEXT}"
+  if [ -n "${SLACK_BANNER_TEXT}" ] ; then
+    if [ -n "${SLACK_BANNER_PRETEXT}" ] ; then
+      echo "DEBUG: pretext     ${SLACK_BANNER_PRETEXT}"
+    fi
+    echo "DEBUG: banner      ${SLACK_BANNER_TEXT}"
+  fi
+  echo "DEBUG: timeout     ${SLACK_TIMEOUT}"
+  if [ ${SLACK_SHORT} -eq 1 ] ; then
+    echo "DEBUG: short       true"
+  else
+    echo "DEBUG: short       false"
+  fi
+  echo "DEBUG: channel URL ${SLACK_CHANNEL_URL}"
+  echo "DEBUG: JSON        ${SLACK_NOTIFICATION}"
+else
+  ${CURL} --connect-timeout ${SLACK_TIMEOUT} -s -X POST -H "Content-type: application/json" --data "${SLACK_NOTIFICATION}" ${SLACK_CHANNEL_URL} &> /dev/null
+fi
+
+exit ${RETVAL}

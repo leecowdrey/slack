@@ -1,0 +1,23 @@
+#!/bin/bash
+RETVAL=0
+NAME=$(basename $0)
+TAG_NAME=$(hostname)
+
+SLACK_TIMEOUT=5
+SLACK_POST=0
+SLACK_CHANNEL_URL="https://hooks.slack.com/services/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"
+SLACK_CHANNEL_NAME="#ddos"
+LOG_TMP="/tmp/some.file"
+
+# post file contents to Slack
+if [ ${SLACK_POST} -eq 1 ] ; then
+  if [ -f "${LOG_TMP}" ] ; then
+    LOG_SLACK=$(<${LOG_TMP})
+    rm -f ${LOG_TMP} &> /dev/null
+    curl --connect-timeout ${SLACK_TIMEOUT} -s -X POST -H "Content-type: application/json" \
+    --data "{\"text\": \"${LOG_SLACK}\", \"channel\": \"${SLACK_CHANNEL_NAME}\", \"link_names\": 1, \"username\": \"${TAG_NAME}\"}" \
+    ${SLACK_CHANNEL_URL} &> /dev/null
+  fi
+fi
+
+exit ${RETVAL}
